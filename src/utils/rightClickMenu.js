@@ -1,5 +1,9 @@
-import {pluginLog} from "./frontLog.js";
+import {pluginLog, pluginDebug} from "./frontLog.js";
 import {stickEmojiOther} from "./stickEmoji.js";
+import {getCurAioData, getCurMsgs} from "./qqStore.js";
+import {lookupMessage, cacheSize} from "./msgCache.js";
+
+const pluginAPI = window.stick_emoji
 
 /**
  * 右键菜单插入功能方法，
@@ -39,6 +43,25 @@ function createMenuItemSE(rightClickMenu, icon, title, callback) {
 /**
  * 右键菜单监听
  */
+// DOM探针：索引都取不到时，看看能不能从消息元素上直接读出会话信息（仅诊断用）
+function probeDom(avatar) {
+    try {
+        const chain = []
+        let node = avatar
+        for (let i = 0; node && i < 10; i++, node = node.parentElement) {
+            const attrs = []
+            for (const attr of Array.from(node.attributes ?? [])) {
+                if (attrs.length >= 8) break
+                attrs.push(attr.name + "=" + String(attr.value).slice(0, 60))
+            }
+            chain.push((node.tagName || "?") + "." + String(node.className || "").slice(0, 40) + "{" + attrs.join(",") + "}")
+        }
+        pluginDebug("DOM探针: " + chain.join(" | "))
+    } catch (e) {
+        pluginDebug("DOM探针失败: " + e)
+    }
+}
+
 export function listenMenu() {
     pluginLog("准备添加右键菜单项")
     let messageContainer__avatar = null;
@@ -46,9 +69,9 @@ export function listenMenu() {
     document.addEventListener("mouseup", (event) => {
         if (event.button === 2) {//如果是鼠标右键
             messageContainer__avatar = event.target;
-            const chatType=app.__vue_app__.config.globalProperties.$store.state.common_Aio.curAioData.chatType
+            const chatType = getCurAioData()?.chatType
             let targetClasses = ["message-container__avatar", "msg-content-container", "message-content", "image-content", "text-normal"]
-            if (!targetClasses.some(className => messageContainer__avatar?.classList?.contains(className)) || chatType!==2) //不符合就直接返回
+            if (!targetClasses.some(className => messageContainer__avatar?.classList?.contains(className)) || (chatType != null && chatType !== 2)) //不符合就直接返回
             {
                 messageContainer__avatar = null;
                 //pluginLog("右键元素不符合，直接返回")
@@ -69,18 +92,42 @@ export function listenMenu() {
                     try {
                         //在这里实现贴表情前的准备工作
                         const msgId = messageContainer__avatar.closest(".ml-item").id
-                        //先根据msgId找到对应的消息
-                        let targetMsg = undefined
-                        for (const message of app.__vue_app__.config.globalProperties.$store.state.aio_chatMsgArea.msgListRef.curMsgs) {
-                            if (message.msgId === msgId) {
-                                targetMsg = message
+                        // 9.9.28 取不到 curMsgs：优先用消息事件缓存，再退回 store
+                        let chatType = null, peerUid = null, msgSeq = null
+                        const cached = lookupMessage(msgId)
+                        if (cached) {
+                            chatType = cached.chatType
+                            peerUid = cached.peerUid
+                            msgSeq = cached.msgSeq
+                        } else {
+                            for (const message of getCurMsgs()) {
+                                if (String(message.msgId) !== String(msgId)) continue
+                                chatType = message.data?.chatType ?? message.chatType
+                                peerUid = message.data?.peerUid ?? message.peerUid
+                                msgSeq = message.data?.msgSeq ?? message.msgSeq
                                 break
                             }
                         }
-
-                        await stickEmojiOther(targetMsg.data.chatType, targetMsg.data.peerUid, targetMsg.data.msgSeq)
+                        if (chatType == null || peerUid == null || msgSeq == null) {
+                            // 本窗口没收到事件时，向主进程索引要一份
+                            try {
+                                const remote = await pluginAPI.getMsgInfo(msgId)
+                                pluginDebug("右键贴表情：主进程索引 size=" + remote?.size + " found=" + remote?.found)
+                                if (remote?.found) {
+                                    chatType = remote.info.chatType
+                                    peerUid = remote.info.peerUid
+                                    msgSeq = remote.info.msgSeq
+                                }
+                            } catch (e) { pluginDebug("getMsgInfo 失败: " + e) }
+                        }
+                        if (chatType == null || peerUid == null || msgSeq == null) {
+                            pluginDebug("右键贴表情：找不到 msgId=" + msgId + " 的会话信息（缓存 " + cacheSize() + " 条）")
+                            probeDom(messageContainer__avatar)
+                            return
+                        }
+                        await stickEmojiOther(chatType, peerUid, msgSeq)
                     } catch (e) {
-
+                    pluginDebug("右键贴表情失败: " + (e?.stack ?? e))
                     }
                 }
             );

@@ -1,114 +1,107 @@
 import {getRandomInt} from "./math.js";
-import {pluginLog} from "./frontLog.js";
+import {pluginDebug} from "./frontLog.js";
 import {qqEmojiList} from "../assests/qq_emoji.js";
+import {getSelfUin} from "./qqStore.js";
 
 const pluginAPI = window.stick_emoji
 const msgIdHandlingList = []
+const handledMsgIds = new Set()
 
-//不对应表情的所有ID
+export async function stickEmojiSelf(payload, config) {
+    const msgList = Array.isArray(payload?.msgList) ? payload.msgList : []
+    if (msgList.length === 0) return
+    if (!config) config = await pluginAPI.getConfig()
 
-export async function stickEmojiSelf(payload) {
-    const selfID = app.__vue_app__.config.globalProperties.$store.state.common_Auth.authData.account//用户自己的Q号
-
-    //注：sendStatus是发送状态，2即为发送完毕；有小灰条的不管；表情列表已经有表情了的不管；插件设置没开贴自己表情的不管。私聊是无法贴表情的,chatType为1是私聊
-    if (payload.msgList[0].senderUin !== selfID || payload.msgList[0].sendStatus !== 2 || payload.msgList[0].chatType === 1 ||
-        payload.msgList[0].elements[0].grayTipElement !== null || payload.msgList[0].emojiLikesList.length !== 0) {
-        pluginLog("条件检测失败，不贴表情")
+    const selfId = getSelfUin()
+    if (selfId == null) {
+        pluginDebug("取不到自己的QQ号，为免贴到别人的消息上，本次跳过")
         return
     }
 
-    const msgSeq = payload.msgList[0].msgSeq
-    const chatType = payload.msgList[0].chatType
-    const peerUid = payload.msgList[0].peerUid
-    const config = await pluginAPI.getConfig()
-    const msgId = payload.msgList[0].msgId
-
-    let result = undefined
-    if (config.useCarousel) {
-        //使用走马灯，非常炫酷！
-        if (msgIdHandlingList.some(msgID => msgID === payload.msgList[0].msgId)) return//说明这条消息正在处理之中。就不要继续走马灯了
-        msgIdHandlingList.push(payload.msgList[0].msgId)
-        let carouselCount = 0;
-        const executeSticking = async () => {
-            if (++carouselCount > config.carouselCircle) {
-                for (let i = 0; i < msgIdHandlingList.length; i++)
-                    if (msgIdHandlingList[i] === msgId) {
-                        msgIdHandlingList.splice(i, 1)
-                        return
-                    }
-            }
-
-            const emojiIdArray = getEmojis(config.stickSelfAmount)
-            //const emojiIdArray=["917505","917506","917507","917508","917509","917510","917511"]
-            console.log(emojiIdArray)
-            for (let i = 0; i < config.stickSelfAmount; i++) {
-                await stick(chatType, peerUid, msgSeq, emojiIdArray[i]);
-                await sleep(config.carouselInterval)
-            }
-            for (let i = 0; i < config.stickSelfAmount; i++) {
-                await unStick(chatType, peerUid, msgSeq, emojiIdArray[i]);
-                await sleep(config.carouselInterval)
-            }
-            executeSticking()
-        };
-        executeSticking();
-
-    } else {
-        const emojiIdArray = getEmojis(config.stickSelfAmount)
-        console.log(emojiIdArray)
-        for (let i = 0; i < config.stickSelfAmount; i++) {
-            result = stick(chatType, peerUid, msgSeq, emojiIdArray[i])
+    for (const msg of msgList) {
+        try {
+            if (!shouldStick(msg, selfId)) continue
+            await stickToMsg(msg, config)
+        } catch (e) {
+            pluginDebug("贴表情失败(" + msg?.msgId + "): " + (e?.stack ?? e))
         }
-        //console.log(await result)
     }
 }
 
+// QQ 9.9.x 里自己的标识是 uid（u_xxx），老版本是 senderUin（数字），两个都比一次
+function isSelf(msg, selfId) {
+    if (msg.senderUid != null && String(msg.senderUid) === String(selfId)) return true
+    if (msg.senderUin != null && String(msg.senderUin) === String(selfId)) return true
+    return false
+}
+
+function shouldStick(msg, selfId) {
+    if (!msg || handledMsgIds.has(msg.msgId)) return false
+    if (msg.sendStatus !== 2) return false//发送中/发送失败不管
+    if (msg.chatType === 1) return false//私聊无法贴表情
+    if (msg.elements?.[0]?.grayTipElement != null) return false//小灰条不管
+    if (msg.emojiLikesList?.length) return false//已经有表情了不管
+    if (!isSelf(msg, selfId)) return false
+    return true
+}
+
+async function stickToMsg(msg, config) {
+    const {chatType, peerUid, msgSeq, msgId} = msg
+    handledMsgIds.add(msgId)
+
+    if (!config.useCarousel) {
+        for (const emojiId of getEmojis(config.stickSelfAmount)) {
+            await setEmojiLike(true, chatType, peerUid, msgSeq, emojiId)
+        }
+        return
+    }
+
+    //走马灯：贴上→撕掉循环，最后一轮停在"已贴上"，否则净效果为零
+    if (msgIdHandlingList.some(id => id === msgId)) return
+    msgIdHandlingList.push(msgId)
+    let carouselCount = 0
+    const executeSticking = async () => {
+        carouselCount++
+        const isLast = carouselCount >= config.carouselCircle
+        const emojiIdArray = getEmojis(config.stickSelfAmount)
+        for (const emojiId of emojiIdArray) {
+            await setEmojiLike(true, chatType, peerUid, msgSeq, emojiId)
+            await sleep(config.carouselInterval)
+        }
+        if (isLast) {
+            const index = msgIdHandlingList.indexOf(msgId)
+            if (index >= 0) msgIdHandlingList.splice(index, 1)
+            return
+        }
+        for (const emojiId of emojiIdArray) {
+            await setEmojiLike(false, chatType, peerUid, msgSeq, emojiId)
+            await sleep(config.carouselInterval)
+        }
+        executeSticking()
+    }
+    executeSticking().catch(e => pluginDebug("走马灯异常: " + (e?.stack ?? e)))
+}
 
 export async function stickEmojiOther(chatType, peerUid, msgSeq) {
     const config = await pluginAPI.getConfig()
-
-    let result = undefined
     for (let i = 0; i < config.stickOtherAmount; i++) {
-        result = pluginAPI.invokeNative("ns-ntApi", "nodeIKernelMsgService/setMsgEmojiLikes", false, {
-            "peer": {"chatType": chatType, "peerUid": peerUid, "guildId": ""},
-            "emojiId": String(getRandomInt(1, 500)),
-            "emojiType": "1",//这里如果改成2的话，会出现bug。贴了表情，但是什么都不显示
-            "msgSeq": msgSeq,
-            "setEmoji": true,
-            isPlugin: true,
-        }, null,)
+        await setEmojiLike(true, chatType, peerUid, msgSeq, randomEmojiId())
     }
-    console.log(await result)
 }
 
-/**
- * 粘贴表情
- * @param chatType
- * @param peerUid
- * @param msgSeq
- * @param {String}emojiId
- * @returns {Promise<*>}
- */
-async function stick(chatType, peerUid, msgSeq, emojiId) {
-    return pluginAPI.invokeNative("ns-ntApi", "nodeIKernelMsgService/setMsgEmojiLikes", false, {
+async function setEmojiLike(setEmoji, chatType, peerUid, msgSeq, emojiId) {
+    return pluginAPI.invokeNative("nodeIKernelMsgService/setMsgEmojiLikes", {
         "peer": {"chatType": chatType, "peerUid": peerUid, "guildId": ""},
-        "emojiId": emojiId,
-        "emojiType": "1",//这里如果改成2的话，会出现bug。贴了表情，但是什么都不显示
-        "msgSeq": msgSeq,
-        "setEmoji": true,
-        //isPlugin: true,
-    }, null,)
+        "emojiId": String(emojiId),
+        "emojiType": "1",//1 = QQ 表情，2 = 系统 Emoji
+        "msgSeq": String(msgSeq),
+        "setEmoji": setEmoji,
+    }, null)
 }
 
-async function unStick(chatType, peerUid, msgSeq, emojiId) {
-    return pluginAPI.invokeNative("ns-ntApi", "nodeIKernelMsgService/setMsgEmojiLikes", false, {
-        "peer": {"chatType": chatType, "peerUid": peerUid, "guildId": ""},
-        "emojiId": emojiId,
-        "emojiType": "1",//这里如果改成2的话，会出现bug。贴了表情，但是什么都不显示
-        "msgSeq": msgSeq,
-        "setEmoji": false,
-        //isPlugin: true,
-    }, null,)
+function randomEmojiId() {
+    const item = qqEmojiList[getRandomInt(0, qqEmojiList.length - 1)]
+    return String(item?.emojiId ?? 0)
 }
 
 async function sleep(ms) {
@@ -117,10 +110,10 @@ async function sleep(ms) {
 
 function getEmojis(amount) {
     const indices = new Set();
-
-    // 生成不重复的随机索引
-    while (indices.size < amount) {
-        indices.add(Math.floor(Math.random() * qqEmojiList.length));
+    const total = qqEmojiList.length
+    const count = Math.max(0, Math.min(amount, total))
+    while (indices.size < count) {
+        indices.add(Math.floor(Math.random() * total));
     }
     return Array.from(indices).map(index => qqEmojiList[index].emojiId)
 }

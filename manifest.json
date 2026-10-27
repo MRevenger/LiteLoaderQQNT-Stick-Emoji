@@ -4,25 +4,31 @@
     "name": "消息贴表情",
     "slug": "stick_emoji",
     "description": "自动给消息贴上emoji！(๑˃ᴗ˂)ﻭ",
-    "version": "1.0.2",
+    "version": "1.1.0",
     "icon": "./src/assests/icon_blue.svg",
     "thumb": "./src/assests/icon_blue.svg",
-    "authors": [{
-        "name": "WJZ_P",
-        "link": "https://github.com/WJZ-P"
-    }],
-    "platform": ["win32", "linux", "darwin"],
+    "authors": [
+        {
+            "name": "WJZ_P",
+            "link": "https://github.com/WJZ-P"
+        }
+    ],
+    "platform": [
+        "win32",
+        "linux",
+        "darwin"
+    ],
     "injects": {
         "renderer": "./src/renderer.js",
         "main": "./src/main.js",
         "preload": "./src/preload.js"
     },
     "repository": {
-    "repo": "WJZ-P/LiteLoaderQQNT-Stick-Emoji",
-    "branch": "main",
-    "release": {
-      "tag": "v1.0.2",
-      "file": "Stick-Emoji-1.0.2.zip"
+        "repo": "MRevenger/LiteLoaderQQNT-Stick-Emoji",
+        "branch": "main",
+        "release": {
+            "tag": "v1.1.0",
+            "file": "Stick-Emoji-1.1.0.zip"
+        }
     }
-  }
 }

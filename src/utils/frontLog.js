@@ -10,3 +10,8 @@ function hexToAnsi(hex) {
 export function pluginLog(message) {
     return console.log(pluginName + message)
 }
+
+export function pluginDebug(message) {
+    pluginLog(message)
+    try { window.stick_emoji?.debugLog?.(String(message)) } catch { }
+}
