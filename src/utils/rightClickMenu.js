@@ -129,7 +129,7 @@ export function listenMenu() {
                         }
                         pluginDebug("右键贴表情: msgId=" + msgId + " 来源=" + source
                             + " chatType=" + chatType + " peerUid=" + peerUid + " msgSeq=" + msgSeq
-                            + (domInfo ? (" domMsgId=" + domInfo.msgId + " domSenderUin=" + domInfo.senderUin) : ""))
+                            + (domInfo ? (" domMsgId=" + domInfo.msgId + " domSenderUin=" + domInfo.senderUin + " strict=" + domInfo.strict) : ""))
                         if (chatType == null || peerUid == null || msgSeq == null) {
                             // 本窗口没收到事件时，向主进程索引要一份
                             try {

@@ -192,17 +192,28 @@ function searchMessageInfo(seeds, wantedMsgId) {
     return null
 }
 
+function seedsOf(instance) {
+    return [
+        instance, instance.props, instance.ctx, instance.data,
+        instance.setupState, instance.vnode?.props, instance.proxy
+    ]
+}
+
 export function getMessageInfoFromDom(element, msgId) {
     try {
         const root = element?.closest?.(".ml-item") ?? element
         if (!root) return null
         const instances = collectInstances(root)
+        if (instances.length === 0) return null
+        // 1) 严格：要求 msgId 与右键那条一致，避免抓到头像/成员等邻近对象
         for (const instance of instances) {
-            const hit = searchMessageInfo([
-                instance, instance.props, instance.ctx, instance.data,
-                instance.setupState, instance.vnode?.props, instance.proxy
-            ])
-            if (hit) return hit
+            const hit = searchMessageInfo(seedsOf(instance), msgId)
+            if (hit) return {...hit, strict: true}
+        }
+        // 2) 宽松：按字段形状找（老行为，作为兜底）
+        for (const instance of instances) {
+            const hit = searchMessageInfo(seedsOf(instance), null)
+            if (hit) return {...hit, strict: false}
         }
         return null
     } catch (e) {
