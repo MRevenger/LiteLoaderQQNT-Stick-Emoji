@@ -118,3 +118,33 @@
 
 ## 如果您喜欢本项目，请给我点个⭐吧(๑>◡<๑)！
 # 用DeepSeek适配了新版QQ
+[your-project-path]:WJZ-P/LiteLoaderQQNT-Stick-Emoji
+
+[contributors-shield]: https://img.shields.io/github/contributors/WJZ-P/LiteLoaderQQNT-Stick-Emoji.svg?style=flat-square
+
+[contributors-url]: https://github.com/WJZ-P/LiteLoaderQQNT-Stick-Emoji/graphs/contributors
+
+[forks-shield]: https://img.shields.io/github/forks/WJZ-P/LiteLoaderQQNT-Stick-Emoji.svg?style=flat-square
+
+[forks-url]: https://github.com/WJZ-P/LiteLoaderQQNT-Stick-Emoji/network/members
+
+[stars-shield]: https://img.shields.io/github/stars/WJZ-P/LiteLoaderQQNT-Stick-Emoji.svg?style=flat-square
+
+[stars-url]: https://github.com/WJZ-P/LiteLoaderQQNT-Stick-Emoji/stargazers
+
+[issues-shield]: https://img.shields.io/github/issues/WJZ-P/LiteLoaderQQNT-Stick-Emoji.svg?style=flat-square
+
+[issues-url]: https://img.shields.io/github/issues/WJZ-P/LiteLoaderQQNT-Stick-Emoji.svg
+
+[license-shield]: https://img.shields.io/github/license/WJZ-P/LiteLoaderQQNT-Stick-Emoji.svg?style=flat-square
+
+[license-url]: https://github.com/WJZ-P/LiteLoaderQQNT-Stick-Emoji/blob/main/LICENSE
+
+[linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=flat-square&logo=linkedin&colorB=555
+
+[linkedin-url]: https://linkedin.com/in/shaojintian
+
+[oldQQ-download-link]:https://ats-prod.oss-accelerate.aliyuncs.com/91ff35732557ef7d8415050a85973801
+
+[LL-installer-link]:https://ats-prod.oss-accelerate.aliyuncs.com/18734247705198dcb594916e8ba1facc
+
