@@ -1,6 +1,6 @@
 import {pluginLog, pluginDebug} from "./frontLog.js";
 import {stickEmojiOther} from "./stickEmoji.js";
-import {getCurAioData, getCurMsgs} from "./qqStore.js";
+import {getCurAioData, getCurMsgs, getMessageInfoFromDom, probeVueDom} from "./qqStore.js";
 import {lookupMessage, cacheSize} from "./msgCache.js";
 
 const pluginAPI = window.stick_emoji
@@ -94,20 +94,42 @@ export function listenMenu() {
                         const msgId = messageContainer__avatar.closest(".ml-item").id
                         // 9.9.28 取不到 curMsgs：优先用消息事件缓存，再退回 store
                         let chatType = null, peerUid = null, msgSeq = null
-                        const cached = lookupMessage(msgId)
-                        if (cached) {
-                            chatType = cached.chatType
-                            peerUid = cached.peerUid
-                            msgSeq = cached.msgSeq
-                        } else {
+                        let source = "none"
+
+                        // 1) 直接从渲染这条消息的 Vue 组件里读（最可靠，历史消息也能读）
+                        const domInfo = getMessageInfoFromDom(messageContainer__avatar, msgId)
+                        if (domInfo) {
+                            chatType = domInfo.chatType
+                            peerUid = domInfo.peerUid
+                            msgSeq = domInfo.msgSeq
+                            source = "dom"
+                        }
+
+                        // 2) 本窗口消息缓存
+                        if (chatType == null) {
+                            const cached = lookupMessage(msgId)
+                            if (cached) {
+                                chatType = cached.chatType
+                                peerUid = cached.peerUid
+                                msgSeq = cached.msgSeq
+                                source = "cache"
+                            }
+                        }
+
+                        // 3) 旧 store（9.9.28 基本取不到）
+                        if (chatType == null) {
                             for (const message of getCurMsgs()) {
                                 if (String(message.msgId) !== String(msgId)) continue
                                 chatType = message.data?.chatType ?? message.chatType
                                 peerUid = message.data?.peerUid ?? message.peerUid
                                 msgSeq = message.data?.msgSeq ?? message.msgSeq
+                                source = "store"
                                 break
                             }
                         }
+                        pluginDebug("右键贴表情: msgId=" + msgId + " 来源=" + source
+                            + " chatType=" + chatType + " peerUid=" + peerUid + " msgSeq=" + msgSeq
+                            + (domInfo ? (" domMsgId=" + domInfo.msgId + " domSenderUin=" + domInfo.senderUin) : ""))
                         if (chatType == null || peerUid == null || msgSeq == null) {
                             // 本窗口没收到事件时，向主进程索引要一份
                             try {
@@ -122,6 +144,7 @@ export function listenMenu() {
                         }
                         if (chatType == null || peerUid == null || msgSeq == null) {
                             pluginDebug("右键贴表情：找不到 msgId=" + msgId + " 的会话信息（缓存 " + cacheSize() + " 条）")
+                            probeVueDom(messageContainer__avatar)
                             probeDom(messageContainer__avatar)
                             return
                         }

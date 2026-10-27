@@ -84,8 +84,16 @@ async function stickToMsg(msg, config) {
 
 export async function stickEmojiOther(chatType, peerUid, msgSeq) {
     const config = await pluginAPI.getConfig()
-    for (let i = 0; i < config.stickOtherAmount; i++) {
-        await setEmojiLike(true, chatType, peerUid, msgSeq, randomEmojiId())
+    const amount = config.stickOtherAmount ?? 1
+    pluginDebug("贴他人表情: chatType=" + chatType + " peerUid=" + peerUid
+        + " msgSeq=" + msgSeq + " 数量=" + amount)
+    for (let i = 0; i < amount; i++) {
+        try {
+            const result = await setEmojiLike(true, chatType, peerUid, msgSeq, randomEmojiId())
+            if (i < 3) pluginDebug("贴他人表情 #" + (i + 1) + " -> " + String(JSON.stringify(result)).slice(0, 200))
+        } catch (e) {
+            pluginDebug("贴他人表情 #" + (i + 1) + " 失败: " + (e?.message ?? e))
+        }
     }
 }
 

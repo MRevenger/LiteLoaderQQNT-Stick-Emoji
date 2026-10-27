@@ -115,3 +115,126 @@ export async function probeStore() {
     }
     pluginDebug("store 可用：来源=" + cachedSource + " 模块数=" + Object.keys(state).length)
 }
+
+// ---- 从 DOM 直接读消息的会话信息 ----
+// 9.9.28 的 aiO 消息列表把每条消息渲染成 Vue 组件（div.message），组件链里带着完整消息对象，
+// 比事件索引可靠：历史消息、别人的消息都能读到。
+
+function isDomNode(value) {
+    return value != null && typeof value === "object" && typeof value.nodeType === "number"
+}
+
+// 收集元素及其祖先/子树上的 Vue 组件实例：
+// LiteLoader 会给被 hook 的组件加 .vue-component 类并把实例放进 el.__VUE__；
+// Vue3 原生是 el.__vueParentComponent，Vue2 是 el.__vue__。
+function pushInstances(out, el) {
+    try {
+        if (Array.isArray(el.__VUE__)) for (const inst of el.__VUE__) if (inst) out.push(inst)
+        if (el.__vueParentComponent) out.push(el.__vueParentComponent)
+        if (el.__vue__) out.push(el.__vue__)
+    } catch { }
+}
+
+function collectInstances(root) {
+    const out = []
+    let node = root
+    for (let i = 0; node && i < 4; i++, node = node.parentElement) pushInstances(out, node)
+    const stack = [root]
+    const seen = new Set()
+    while (stack.length && seen.size < 4000) {
+        const el = stack.pop()
+        if (!el || seen.has(el)) continue
+        seen.add(el)
+        pushInstances(out, el)
+        const children = el.children
+        if (children) for (let i = 0; i < children.length; i++) stack.push(children[i])
+    }
+    return out
+}
+
+function pickMessageInfo(obj, wantedMsgId) {
+    if (!obj || typeof obj !== "object" || isDomNode(obj) || typeof obj === "function") return null
+    // 有 msgId 就必须和右键那条一致，避免抓到旁边别的对象（头像/成员等）
+    if (wantedMsgId != null && obj.msgId != null && String(obj.msgId) !== String(wantedMsgId)) return null
+    const chatType = obj.chatType ?? obj.peer?.chatType
+    const peerUid = obj.peerUid ?? obj.peer?.peerUid
+    const msgSeq = obj.msgSeq
+    if (chatType == null || peerUid == null || msgSeq == null) return null
+    return {
+        chatType, peerUid, msgSeq,
+        msgId: obj.msgId,
+        senderUin: obj.senderUin,
+        peerName: obj.peerName
+    }
+}
+
+function searchMessageInfo(seeds, wantedMsgId) {
+    const queue = []
+    for (const seed of seeds) if (seed && typeof seed === "object") queue.push({node: seed, depth: 0})
+    const seen = new Set()
+    let visited = 0
+    while (queue.length && visited < 6000) {
+        const {node, depth} = queue.shift()
+        visited++
+        if (!node || typeof node !== "object" || isDomNode(node) || seen.has(node)) continue
+        seen.add(node)
+        const hit = pickMessageInfo(node, wantedMsgId)
+        if (hit) return hit
+        if (depth >= 4) continue
+        let keys = []
+        try { keys = Object.keys(node).slice(0, 40) } catch { continue }
+        for (const key of keys) {
+            let value
+            try { value = node[key] } catch { continue }
+            if (value && typeof value === "object" && !isDomNode(value)) queue.push({node: value, depth: depth + 1})
+        }
+    }
+    return null
+}
+
+export function getMessageInfoFromDom(element, msgId) {
+    try {
+        const root = element?.closest?.(".ml-item") ?? element
+        if (!root) return null
+        const instances = collectInstances(root)
+        for (const instance of instances) {
+            const hit = searchMessageInfo([
+                instance, instance.props, instance.ctx, instance.data,
+                instance.setupState, instance.vnode?.props, instance.proxy
+            ])
+            if (hit) return hit
+        }
+        return null
+    } catch (e) {
+        pluginDebug("DOM 读消息信息失败: " + (e?.message ?? e))
+        return null
+    }
+}
+
+// 诊断用：把元素的 Vue 结构与实例字段打出来
+export function probeVueDom(element) {
+    try {
+        const root = element?.closest?.(".ml-item") ?? element
+        const lines = []
+        let node = root
+        for (let i = 0; node && i < 4; i++, node = node.parentElement) {
+            let props = []
+            try { props = Object.getOwnPropertyNames(node).filter(n => /vue/i.test(n)) } catch { }
+            lines.push((node.tagName || "?") + "." + String(node.className || "").slice(0, 28) + "->" + (props.join(",") || "-"))
+        }
+        const instances = collectInstances(root)
+        lines.push("实例数=" + instances.length)
+        if (instances.length) {
+            const inst = instances[instances.length - 1]
+            for (const key of ["props", "ctx", "data", "setupState", "vnode.props"]) {
+                try {
+                    const value = key === "vnode.props" ? inst.vnode?.props : inst[key]
+                    lines.push(key + "={" + Object.keys(value ?? {}).slice(0, 12).join(",") + "}")
+                } catch { }
+            }
+        }
+        pluginDebug("Vue探针: " + lines.join(" | "))
+    } catch (e) {
+        pluginDebug("Vue探针失败: " + (e?.message ?? e))
+    }
+}
